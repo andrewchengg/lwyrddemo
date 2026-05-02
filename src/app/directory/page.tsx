@@ -5,7 +5,8 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { lawFirms, specialties, getSpecialtiesForFirm } from "@/lib/seed-data";
-import { MapPin, Users, ArrowRight } from "lucide-react";
+import { MapPin, Users } from "lucide-react";
+import { DirectorySearchBar } from "@/components/directory/search-bar";
 
 const firmSizeLabels: Record<string, string> = {
   solo: "Solo Practitioner",
@@ -49,6 +50,8 @@ export default async function DirectoryPage({
           <p className="text-muted-foreground mb-8">
             Browse our curated network of {lawFirms.length} vetted law firms.
           </p>
+
+          <DirectorySearchBar />
 
           {/* Filters */}
           <div className="flex flex-wrap gap-2 mb-8">

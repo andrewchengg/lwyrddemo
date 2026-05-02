@@ -1,35 +1,67 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useCallback } from "react";
 import Link from "next/link";
 import { Badge } from "@/components/ui/badge";
 import { ArrowRight, Loader2, MapPin, Send } from "lucide-react";
+import { lawFirms, getSpecialtiesForFirm } from "@/lib/seed-data";
 
-type RecommendedFirm = {
-  firm_id: string;
-  firm_name: string;
-  match_reason: string;
+type ParsedFirm = {
+  id: string;
+  name: string;
+  reason: string;
   slug: string;
   city: string;
   state: string;
-  firmSize: string;
   specialties: string[];
 };
 
-type SearchResult = {
-  summary: string;
-  identified_specialties: string[];
-  recommended_firms: RecommendedFirm[];
-  advice: string;
-};
+function parseStreamedResponse(text: string) {
+  const summary =
+    text.match(/===SUMMARY===\s*([\s\S]*?)(?=\n===|$)/)?.[1]?.trim() || "";
+  const specialtiesMatch =
+    text.match(/===SPECIALTIES===\s*([\s\S]*?)(?=\n===|$)/)?.[1]?.trim() || "";
+  const identifiedSpecialties = specialtiesMatch
+    ? specialtiesMatch
+        .split(",")
+        .map((s) => s.trim())
+        .filter(Boolean)
+    : [];
+  const advice =
+    text.match(/===ADVICE===\s*([\s\S]*?)(?=\n===|$)/)?.[1]?.trim() || "";
+
+  const firmBlocks = text.split("===FIRM===").slice(1);
+  const firms: ParsedFirm[] = firmBlocks
+    .map((block) => {
+      const id = block.match(/ID:\s*(\S+)/)?.[1] || "";
+      const name = block.match(/Name:\s*(.+)/)?.[1]?.trim() || "";
+      const reason =
+        block.match(/Reason:\s*([\s\S]*?)(?=\n===|$)/)?.[1]?.trim() || "";
+      const firm = lawFirms.find((f) => f.id === id);
+      const specs = firm ? getSpecialtiesForFirm(firm) : [];
+      return {
+        id,
+        name: name || firm?.name || "",
+        reason,
+        slug: firm?.slug || "",
+        city: firm?.city || "",
+        state: firm?.state || "",
+        specialties: specs.map((s) => s.name),
+      };
+    })
+    .filter((f) => f.id && f.name);
+
+  return { summary, identifiedSpecialties, firms, advice };
+}
 
 export function AISearch() {
   const [query, setQuery] = useState("");
   const [loading, setLoading] = useState(false);
-  const [result, setResult] = useState<SearchResult | null>(null);
+  const [streamedText, setStreamedText] = useState("");
+  const [done, setDone] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  async function handleSearch() {
+  const handleSearch = useCallback(async () => {
     if (query.trim().length < 10) {
       setError("Please describe your situation in a bit more detail.");
       return;
@@ -37,7 +69,8 @@ export function AISearch() {
 
     setLoading(true);
     setError(null);
-    setResult(null);
+    setStreamedText("");
+    setDone(false);
 
     try {
       const res = await fetch("/api/search", {
@@ -45,18 +78,37 @@ export function AISearch() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ query }),
       });
-      const data = await res.json();
+
       if (!res.ok) {
+        const data = await res.json();
         setError(data.error || "Something went wrong.");
-      } else {
-        setResult(data);
+        setLoading(false);
+        return;
       }
+
+      const reader = res.body?.getReader();
+      const decoder = new TextDecoder();
+      let accumulated = "";
+
+      if (reader) {
+        while (true) {
+          const { done: readerDone, value } = await reader.read();
+          if (readerDone) break;
+          accumulated += decoder.decode(value, { stream: true });
+          setStreamedText(accumulated);
+        }
+      }
+
+      setDone(true);
     } catch {
       setError("Failed to connect. Please try again.");
     } finally {
       setLoading(false);
     }
-  }
+  }, [query]);
+
+  const parsed = streamedText ? parseStreamedResponse(streamedText) : null;
+  const showResults = parsed && (parsed.summary || parsed.firms.length > 0);
 
   return (
     <div className="w-full max-w-2xl mx-auto">
@@ -95,22 +147,15 @@ export function AISearch() {
 
       {error && <p className="mt-4 text-sm text-destructive">{error}</p>}
 
-      {loading && (
-        <div className="mt-12 flex flex-col items-center gap-3">
-          <Loader2 className="w-6 h-6 animate-spin text-primary/40" />
-          <p className="text-sm text-muted-foreground">
-            Analyzing your situation...
-          </p>
-        </div>
-      )}
-
-      {result && (
+      {showResults && (
         <div className="mt-12 text-left">
-          <p className="text-foreground leading-relaxed">{result.summary}</p>
+          {parsed.summary && (
+            <p className="text-foreground leading-relaxed">{parsed.summary}</p>
+          )}
 
-          {result.identified_specialties.length > 0 && (
+          {parsed.identifiedSpecialties.length > 0 && (
             <div className="flex flex-wrap gap-2 mt-4">
-              {result.identified_specialties.map((s) => (
+              {parsed.identifiedSpecialties.map((s) => (
                 <Badge
                   key={s}
                   variant="outline"
@@ -122,65 +167,79 @@ export function AISearch() {
             </div>
           )}
 
-          <div className="mt-8 space-y-3">
-            <p className="text-xs font-medium text-muted-foreground uppercase tracking-[0.15em]">
-              Recommended Firms
-            </p>
-            {result.recommended_firms.map((firm) => (
-              <Link
-                key={firm.firm_id}
-                href={`/directory/${firm.slug}`}
-                className="group block border-b border-border py-5 last:border-0 hover:pl-2 transition-all"
-              >
-                <div className="flex items-start justify-between gap-4">
-                  <div className="flex-1 min-w-0">
-                    <h3 className="font-heading text-lg font-semibold group-hover:text-primary/80 transition-colors">
-                      {firm.firm_name}
-                    </h3>
-                    <p className="text-xs text-muted-foreground flex items-center gap-1 mt-1">
-                      <MapPin className="w-3 h-3" />
-                      {firm.city}, {firm.state}
-                    </p>
-                    <p className="text-sm text-foreground/70 mt-2 leading-relaxed">
-                      {firm.match_reason}
-                    </p>
-                    <div className="flex flex-wrap gap-1.5 mt-3">
-                      {firm.specialties.map((s) => (
-                        <span key={s} className="text-xs text-muted-foreground">
-                          {s}
-                        </span>
-                      ))}
+          {parsed.firms.length > 0 && (
+            <div className="mt-8 space-y-3">
+              <p className="text-xs font-medium text-muted-foreground uppercase tracking-[0.15em]">
+                Recommended Firms
+              </p>
+              {parsed.firms.map((firm) => (
+                <Link
+                  key={firm.id}
+                  href={`/directory/${firm.slug}`}
+                  className="group block border-b border-border py-5 last:border-0 hover:pl-2 transition-all"
+                >
+                  <div className="flex items-start justify-between gap-4">
+                    <div className="flex-1 min-w-0">
+                      <h3 className="font-heading text-lg font-semibold group-hover:text-primary/80 transition-colors">
+                        {firm.name}
+                      </h3>
+                      {firm.city && (
+                        <p className="text-xs text-muted-foreground flex items-center gap-1 mt-1">
+                          <MapPin className="w-3 h-3" />
+                          {firm.city}, {firm.state}
+                        </p>
+                      )}
+                      {firm.reason && (
+                        <p className="text-sm text-foreground/70 mt-2 leading-relaxed">
+                          {firm.reason}
+                        </p>
+                      )}
+                      {firm.specialties.length > 0 && (
+                        <div className="flex flex-wrap gap-3 mt-3">
+                          {firm.specialties.map((s) => (
+                            <span
+                              key={s}
+                              className="text-xs text-muted-foreground"
+                            >
+                              {s}
+                            </span>
+                          ))}
+                        </div>
+                      )}
                     </div>
+                    <ArrowRight className="w-4 h-4 text-muted-foreground/40 group-hover:text-primary shrink-0 mt-1.5 transition-colors" />
                   </div>
-                  <ArrowRight className="w-4 h-4 text-muted-foreground/40 group-hover:text-primary shrink-0 mt-1.5 transition-colors" />
-                </div>
-              </Link>
-            ))}
-          </div>
+                </Link>
+              ))}
+            </div>
+          )}
 
-          {result.advice && (
+          {parsed.advice && done && (
             <p className="mt-6 text-sm text-muted-foreground italic">
-              {result.advice}
+              {parsed.advice}
             </p>
           )}
 
-          <div className="mt-8 pt-6 border-t border-border flex items-center justify-between">
-            <Link
-              href="/inquiry"
-              className="text-sm text-muted-foreground hover:text-foreground underline underline-offset-4 transition-colors"
-            >
-              Prefer a personal match?
-            </Link>
-            <button
-              onClick={() => {
-                setResult(null);
-                setQuery("");
-              }}
-              className="text-sm text-muted-foreground hover:text-foreground underline underline-offset-4 transition-colors"
-            >
-              Search again
-            </button>
-          </div>
+          {done && (
+            <div className="mt-8 pt-6 border-t border-border flex items-center justify-between">
+              <Link
+                href="/inquiry"
+                className="text-sm text-muted-foreground hover:text-foreground underline underline-offset-4 transition-colors"
+              >
+                Prefer a personal match?
+              </Link>
+              <button
+                onClick={() => {
+                  setStreamedText("");
+                  setDone(false);
+                  setQuery("");
+                }}
+                className="text-sm text-muted-foreground hover:text-foreground underline underline-offset-4 transition-colors"
+              >
+                Search again
+              </button>
+            </div>
+          )}
         </div>
       )}
     </div>
