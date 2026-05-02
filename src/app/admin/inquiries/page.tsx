@@ -11,7 +11,7 @@ import { sampleInquiries, specialties, lawFirms } from "@/lib/seed-data";
 
 export default function AdminInquiriesPage() {
   return (
-    <div className="max-w-5xl">
+    <div className="w-full">
       <h1 className="font-heading text-2xl font-bold mb-2">Inquiries</h1>
       <p className="text-muted-foreground text-sm mb-6">
         {sampleInquiries.length} total inquiries

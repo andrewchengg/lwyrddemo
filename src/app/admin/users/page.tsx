@@ -48,7 +48,7 @@ const sampleUsers = [
 
 export default function AdminUsersPage() {
   return (
-    <div className="max-w-5xl">
+    <div className="w-full">
       <h1 className="font-heading text-2xl font-bold mb-2">Users</h1>
       <p className="text-muted-foreground text-sm mb-6">
         {sampleUsers.length} registered users

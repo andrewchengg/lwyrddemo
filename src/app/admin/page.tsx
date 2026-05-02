@@ -6,7 +6,7 @@ export default function AdminDashboardPage() {
   const publishedFirms = lawFirms.length;
 
   return (
-    <div className="max-w-5xl">
+    <div className="w-full">
       <h1 className="font-heading text-2xl font-bold mb-2">Admin Dashboard</h1>
       <p className="text-muted-foreground mb-8">
         Overview of platform activity and data.

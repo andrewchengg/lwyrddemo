@@ -14,7 +14,7 @@ import { Plus, Pencil } from "lucide-react";
 
 export default function AdminFirmsPage() {
   return (
-    <div className="max-w-5xl">
+    <div className="w-full">
       <div className="flex items-center justify-between mb-6">
         <div>
           <h1 className="font-heading text-2xl font-bold">Law Firms</h1>
